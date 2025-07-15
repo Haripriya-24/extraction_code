@@ -1,0 +1,49 @@
+import cv2
+import numpy as np
+from google.colab.patches import cv2_imshow
+
+# Load the image
+img = cv2.imread('/content/opt2.jpg')
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+# 1. Crop the header region (where the vertical lines exist)
+header_crop = gray[0:100, :]  # adjust height if needed
+
+# 2. Edge detection on header
+edges = cv2.Canny(header_crop, 50, 150, apertureSize=3)
+
+# 3. Detect vertical lines using Hough transform
+lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=30, 
+                        minLineLength=30, maxLineGap=5)
+
+vertical_lines_x = []
+
+if lines is not None:
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        # Keep only nearly vertical lines
+        if abs(x1 - x2) < 5:
+            vertical_lines_x.append(x1)
+
+# Remove duplicates / near duplicates
+vertical_lines_x = sorted(set(vertical_lines_x))
+
+# Optional: Merge very close x-values
+merged_x = []
+threshold_px = 10
+for x in vertical_lines_x:
+    if not merged_x or abs(x - merged_x[-1]) > threshold_px:
+        merged_x.append(x)
+
+# 4. Draw vertical lines over entire image
+output_img = img.copy()
+for x in merged_x:
+    cv2.line(output_img, (x, 0), (x, img.shape[0]), (0, 0, 255), 2)
+
+# 5. Draw horizontal lines at top/bottom if needed
+cv2.line(output_img, (0, 0), (img.shape[1], 0), (0, 0, 255), 2)
+cv2.line(output_img, (0, img.shape[0]-1), (img.shape[1], img.shape[0]-1), (0, 0, 255), 2)
+
+# 6. Save and display (Colab-friendly)
+cv2.imwrite('/content/output_with_columns.jpg', output_img)
+cv2_imshow(output_img)
