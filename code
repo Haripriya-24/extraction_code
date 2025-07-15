@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
-from google.colab.patches import cv2_imshow
+import matplotlib.pyplot as plt
 
 # Load the image
-img = cv2.imread('/content/opt2.jpg')
+
+img = cv2.imread('opt2.jpg')
+
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 # 1. Crop the header region (where the vertical lines exist)
@@ -13,7 +15,7 @@ header_crop = gray[0:100, :]  # adjust height if needed
 edges = cv2.Canny(header_crop, 50, 150, apertureSize=3)
 
 # 3. Detect vertical lines using Hough transform
-lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=30, 
+lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=30,
                         minLineLength=30, maxLineGap=5)
 
 vertical_lines_x = []
@@ -44,6 +46,12 @@ for x in merged_x:
 cv2.line(output_img, (0, 0), (img.shape[1], 0), (0, 0, 255), 2)
 cv2.line(output_img, (0, img.shape[0]-1), (img.shape[1], img.shape[0]-1), (0, 0, 255), 2)
 
-# 6. Save and display (Colab-friendly)
-cv2.imwrite('/content/output_with_columns.jpg', output_img)
-cv2_imshow(output_img)
+# 6. Save image
+cv2.imwrite('output_with_columns.jpg', output_img)
+
+# 7. Display image in Jupyter notebook
+output_img_rgb = cv2.cvtColor(output_img, cv2.COLOR_BGR2RGB)
+plt.figure(figsize=(12, 8))
+plt.imshow(output_img_rgb)
+plt.axis('off')
+plt.show()
