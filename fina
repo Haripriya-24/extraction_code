@@ -1,0 +1,111 @@
+import cv2
+import numpy as np
+import pytesseract
+import pandas as pd
+
+# Optional: Set path to tesseract.exe if not added to system PATH
+# pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+# Load image
+image_path = 'C:/Users/Lenovo/Pictures/opt/pic2.PNG'
+image = cv2.imread(image_path)
+gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+# Binarize image
+binary = cv2.adaptiveThreshold(~gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                               cv2.THRESH_BINARY, 15, -2)
+
+# Detect lines
+horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+
+horizontal = cv2.dilate(cv2.erode(binary, horizontal_kernel), horizontal_kernel)
+vertical = cv2.dilate(cv2.erode(binary, vertical_kernel), vertical_kernel)
+
+# Intersections of lines
+intersections = cv2.bitwise_and(horizontal, vertical)
+contours, _ = cv2.findContours(intersections, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+points = [cv2.boundingRect(cnt)[0:2] for cnt in contours]
+
+# Cluster nearby corner points
+def cluster_points(points, threshold=10):
+    clustered = []
+    for pt in points:
+        matched = False
+        for group in clustered:
+            if abs(pt[0] - group[0][0]) < threshold and abs(pt[1] - group[0][1]) < threshold:
+                group.append(pt)
+                matched = True
+                break
+        if not matched:
+            clustered.append([pt])
+    return [np.mean(group, axis=0).astype(int) for group in clustered]
+
+grid_points = cluster_points(points)
+
+# Build grid cells by pairing adjacent x and y coordinates
+x_coords = sorted(set([pt[0] for pt in grid_points]))
+y_coords = sorted(set([pt[1] for pt in grid_points]))
+
+cells = []
+for i in range(len(y_coords) - 1):
+    for j in range(len(x_coords) - 1):
+        x, y = x_coords[j], y_coords[i]
+        w, h = x_coords[j+1] - x, y_coords[i+1] - y
+        cells.append((x, y, w, h))
+
+# Sort cells into rows
+rows = []
+current_row = []
+last_y = -1
+tolerance = 15
+
+for cell in sorted(cells, key=lambda b: (b[1], b[0])):
+    x, y, w, h = cell
+    if last_y == -1 or abs(y - last_y) < tolerance:
+        current_row.append(cell)
+    else:
+        rows.append(current_row)
+        current_row = [cell]
+    last_y = y
+
+if current_row:
+    rows.append(current_row)
+
+# OCR text from each cell (skip blanks and noisy ones)
+image_for_ocr = cv2.imread(image_path)
+table_data = []
+
+for row_cells in rows:
+    row_text = []
+    for (x, y, w, h) in sorted(row_cells, key=lambda b: b[0]):
+        roi = image_for_ocr[y:y+h, x:x+w]
+        roi = cv2.resize(roi, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+
+        gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        non_zero_count = cv2.countNonZero(gray_roi)
+        area = gray_roi.shape[0] * gray_roi.shape[1]
+
+        # Skip visually blank regions
+        if non_zero_count < 0.05 * area:
+            row_text.append("")
+            continue
+
+        text = pytesseract.image_to_string(roi, config='--psm 7').strip()
+
+        # Skip gibberish or very short outputs (like "Bn", "pe")
+        if len(text) <= 2 or text.lower() in {"bn", "pe"}:
+            row_text.append("")
+        else:
+            row_text.append(text)
+            cv2.rectangle(image_for_ocr, (x, y), (x+w, y+h), (0, 0, 255), 1)
+    table_data.append(row_text)
+
+# Export to Excel
+df = pd.DataFrame(table_data)
+df.to_excel('C:/Users/Lenovo/Pictures/opt/extracted_table_cleaned.xlsx', index=False, header=False)
+
+# Save annotated image
+cv2.imwrite('C:/Users/Lenovo/Pictures/opt/final_detected_cells_cleaned.png', image_for_ocr)
+
+print("✅ Extraction complete! Cleaned Excel and annotated image saved.")
